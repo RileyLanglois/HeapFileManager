@@ -13,25 +13,42 @@ const Status createHeapFile(const string fileName)
 
     // try to open the file. This should return an error
     status = db.openFile(fileName, file);
-    if (status != OK)
+    if (status == OK)
     {
-		// file doesn't exist. First create it and allocate
-		// an empty header page and data page.
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+        // file already exists
+        return FILEEXISTS;
     }
-    return (FILEEXISTS);
+    else
+    {
+        status = db.createFile(fileName);
+        if (status != OK) return status;
+        status = db.openFile(fileName, file);
+        if (status != OK) return status;
+        
+        status = bufMgr->allocPage(file, hdrPageNo, hdrPagePtr);
+        if (status != OK) return status;
+        FileHdrPage* hdrPagePtr; = (FileHdrPage*) hdrPagePtr;
+        
+        strcpy(hdrPage->fileName, fileName.c_str());
+        hdrPage->recCnt = 0;
+        hdrPage->pageCnt = 2; // header + 1 data page
+        
+        status = bufMgr->allocPage(file, newPageNo, newPage);
+        if (status != OK) {
+            bufMgr->unPinPage(file, hdrPageNo, true);
+            return status;
+        }
+        newPage->init(newPageNo);
+        
+        hdrPage->firstPage = newPageNo;
+        hdrPage->lastPage = newPageNo;
+        
+        status = bufMgr->unPinPage(file, hdrPageNo, true);
+        if (status != OK) return status;
+        status = bufMgr->unPinPage(file, newPageNo, true);
+        if (status != OK) return status;
+    }
+    return OK;
 }
 
 // routine to destroy a heapfile
