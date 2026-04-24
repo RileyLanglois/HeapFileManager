@@ -25,13 +25,13 @@ const Status createHeapFile(const string fileName)
         status = db.openFile(fileName, file);
         if (status != OK) return status;
         
-        status = bufMgr->allocPage(file, hdrPageNo, hdrPagePtr);
+        status = bufMgr->allocPage(file, hdrPageNo, pagePtr);
         if (status != OK) return status;
-        FileHdrPage* hdrPagePtr; = (FileHdrPage*) hdrPagePtr;
+        FileHdrPage* hdrPagePtr = (FileHdrPage*) pagePtr;
         
-        strcpy(hdrPage->fileName, fileName.c_str());
-        hdrPage->recCnt = 0;
-        hdrPage->pageCnt = 2; // header + 1 data page
+        strcpy(hdrPagePtr->fileName, fileName.c_str());
+        hdrPagePtr->recCnt = 0;
+        hdrPagePtr->pageCnt = 2; // header + 1 data page
         
         status = bufMgr->allocPage(file, newPageNo, newPage);
         if (status != OK) {
@@ -40,8 +40,8 @@ const Status createHeapFile(const string fileName)
         }
         newPage->init(newPageNo);
         
-        hdrPage->firstPage = newPageNo;
-        hdrPage->lastPage = newPageNo;
+        hdrPagePtr->firstPage = newPageNo;
+        hdrPagePtr->lastPage = newPageNo;
         
         status = bufMgr->unPinPage(file, hdrPageNo, true);
         if (status != OK) return status;
@@ -267,24 +267,82 @@ const Status HeapFileScan::resetScan()
 
 const Status HeapFileScan::scanNext(RID& outRid)
 {
-    Status 	status = OK;
-    RID		nextRid;
-    RID		tmpRid;
-    int 	nextPageNo;
-    Record      rec;
+    Status  status = OK;
+    RID     nextRid;
+    int     nextPageNo;
+    Record  rec;
 
-    
-	
-	
-	
-	
-	
-	
-	
-	
-	
+    // Check if this is the first call to scanNext()
+    if (curPage == NULL)
+    {
+        if ((status = bufMgr->readPage(filePtr, headerPage->firstPage, curPage)) != OK)
+            return status;
+        curPageNo = headerPage->firstPage;
+        curDirtyFlag = false;
+        curRec = NULLRID;
+    }
+
+    // Loop through pages until we find a matching record or reach EOF
+    while (true)
+    {
+        // Determine if we should get the first record or next record
+        if (curRec.pageNo == NULLRID.pageNo && curRec.slotNo == NULLRID.slotNo)
+        {
+            // Get the first record on the current page
+            status = curPage->firstRecord(curRec);
+        }
+        else
+        {
+            // Get the next record on the current page
+            status = curPage->nextRecord(curRec, nextRid);
+            if (status == OK)
+                curRec = nextRid;
+        }
+
+        // Handle end of page or no records
+        if (status == NORECORDS || status == ENDOFPAGE)
+        {
+            // Try to move to the next page
+            if ((status = curPage->getNextPage(nextPageNo)) != OK)
+                return status;
+
+            if (nextPageNo < 0)
+            {
+                // No more pages in the file
+                return FILEEOF;
+            }
+
+            // Unpin the current page and read the next page
+            if ((status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag)) != OK)
+                return status;
+
+            if ((status = bufMgr->readPage(filePtr, nextPageNo, curPage)) != OK)
+                return status;
+
+            curPageNo = nextPageNo;
+            curDirtyFlag = false;
+            curRec = NULLRID;
+            continue;
+        }
+
+        // If an error occurred getting the record RID, return it
+        if (status != OK)
+            return status;
+
+        // Get the actual record data
+        if ((status = curPage->getRecord(curRec, rec)) != OK)
+            return status;
+
+        // Check if this record matches the scan predicate
+        if (matchRec(rec))
+        {
+            outRid = curRec;
+            return OK;
+        }
+
+        // Record didn't match the filter, continue to next record
+    }
 }
-
 
 // returns pointer to the current record.  page is left pinned
 // and the scan logic is required to unpin the page 
