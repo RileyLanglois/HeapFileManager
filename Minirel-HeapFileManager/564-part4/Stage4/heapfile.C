@@ -394,10 +394,10 @@ InsertFileScan::~InsertFileScan()
 // Insert a record into the file
 const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
 {
-    Page*	newPage;
-    int		newPageNo;
-    Status	status, unpinstatus;
-    RID		rid;
+    Page*    newPage;
+    int      newPageNo;
+    Status   status, unpinstatus;
+    RID      rid;
 
     // check for very large records
     if ((unsigned int) rec.length > PAGESIZE-DPFIXED)
@@ -406,18 +406,75 @@ const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
         return INVALIDRECLEN;
     }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+    // ensure current page is the last data page in the file
+    if (curPage == NULL || curPageNo != headerPage->lastPage)
+    {
+        if (curPage != NULL)
+        {
+            status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+            if (status != OK) return status;
+            curPage = NULL;
+        }
+
+        curPageNo = headerPage->lastPage;
+        if ((status = bufMgr->readPage(filePtr, curPageNo, curPage)) != OK)
+            return status;
+        // try to insert into current last page
+        status = curPage->insertRecord(rec, rid);
+        if (status == OK)
+        {
+            curDirtyFlag = true;
+            outRid = rid;
+            headerPage->recCnt++;
+            hdrDirtyFlag = true;
+            return OK;
+        }
+        else
+        {
+            // current page is full, allocate a new page
+            if ((status = bufMgr->allocPage(filePtr, newPageNo, newPage)) != OK)
+                return status;
+
+            newPage->init(newPageNo);
+
+            status = curPage->setNextPage(newPageNo);
+            if (status != OK)
+            {
+                bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+                return status;
+            }
+            curDirtyFlag = true;
+
+            unpinstatus = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+            if (unpinstatus != OK)
+                return unpinstatus;
+
+            curPage = newPage;
+            curPageNo = newPageNo;
+            curDirtyFlag = false;
+
+            status = curPage->insertRecord(rec, rid);
+            if (status != OK)
+                return status;
+
+            curDirtyFlag = true;
+            outRid = rid;
+            headerPage->lastPage = newPageNo;
+            headerPage->pageCnt++;
+            headerPage->recCnt++;
+            hdrDirtyFlag = true;
+
+            return OK;
+        }
+        
+    }
 }
+
+    
+    
+    
+    
+
+    
 
 
