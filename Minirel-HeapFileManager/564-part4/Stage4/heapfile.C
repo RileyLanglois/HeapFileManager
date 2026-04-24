@@ -68,24 +68,27 @@ HeapFile::HeapFile(const string & fileName, Status& returnStatus)
     // open the file and read in the header page and the first data page
     if ((status = db.openFile(fileName, filePtr)) == OK)
     {
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+         if ((status = filePtr->getFirstPage(headerPageNo)) == OK)
+         {
+            if ((status = bufMgr->readPage(filePtr, headerPageNo, pagePtr)) == OK)
+            {
+                headerPage = (FileHdrPage*) pagePtr;
+                hdrDirtyFlag = false;
+
+                currPageNo = headerPage->firstPage;
+                if ((status = bufMgr->readPage(filePtr, currPageNo, pagePtr)) == OK)
+                {
+                    curPage = (DataPage*) pagePtr;
+                    curDirtyFlag = false;
+                    return;
+                }
+            }
+         }
     }
-    else
-    {
-    	cerr << "open of heap file failed\n";
-		returnStatus = status;
-		return;
-    }
+
+    cerr << "open of heap file failed\n";
+	returnStatus = status;
+	return;
 }
 
 // the destructor closes the file
@@ -137,13 +140,42 @@ const Status HeapFile::getRecord(const RID & rid, Record & rec)
     Status status;
 
     // cout<< "getRecord. record (" << rid.pageNo << "." << rid.slotNo << ")" << endl;
-   
-   
-   
-   
-   
-   
-   
+   // record is already on pinned page
+    if (curPage != NULL && curPageNo == rid.pageNo)
+   {
+        status = curPage->getRecord(rid, rec);
+        curRec = rid;
+        return status;
+   }
+
+   // wrong or no page page pinned, unpin current page first
+   if (curPage != NULL)
+   {
+        if ((status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag)) != OK)
+        {
+            return status;
+        }
+        curPage = NULL;
+   }
+
+   // read and pin page
+   if ((status = bufMgr->readPage(filePtr, rid.pageNo, curPage)) != OK)
+   {
+        return status;
+   }
+
+   // bookkeeping
+   curPageNo = rid.pageNo;
+   curDirtyFlag = false;
+
+   // get the record from the page
+   if ((status = curPage->getRecord(rid, rec)) != OK)
+    {
+          return status;
+    }
+
+    curRec = rid;
+    return OK;
 }
 
 HeapFileScan::HeapFileScan(const string & name,
