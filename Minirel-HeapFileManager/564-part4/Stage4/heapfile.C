@@ -20,7 +20,7 @@ const Status createHeapFile(const string fileName)
     }
     
 
-    if ((status = db.createFile(fileName)) == OK)
+    if ((status = db.createFile(fileName)) != OK)
         return status;
         
     if ((status = db.openFile(fileName, file)) != OK)
@@ -30,9 +30,9 @@ const Status createHeapFile(const string fileName)
         return status;
 
     hdrPage = (FileHdrPage*) newPage;
-    strcpy(hdrPagePtr->fileName, fileName.c_str());
-    hdrPagePtr->recCnt = 0;
-    hdrPagePtr->pageCnt = 1; 
+    strcpy(hdrPage->fileName, fileName.c_str());
+    hdrPage->recCnt = 0;
+    hdrPage->pageCnt = 1; 
         
     if ((status = bufMgr->allocPage(file, newPageNo, newPage)) != OK)
     {
