@@ -84,8 +84,10 @@ HeapFile::HeapFile(const string & fileName, Status& returnStatus)
                 curPageNo = headerPage->firstPage;
                 if ((status = bufMgr->readPage(filePtr, curPageNo, pagePtr)) == OK)
                 {
-                    curPage = (DataPage*) pagePtr;
+                    curPage = pagePtr;
                     curDirtyFlag = false;
+                    curRec = NULLRID;
+                    returnStatus = OK;
                     return;
                 }
             }
