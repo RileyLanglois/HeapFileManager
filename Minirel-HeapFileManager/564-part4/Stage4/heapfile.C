@@ -18,36 +18,42 @@ const Status createHeapFile(const string fileName)
         // file already exists
         return FILEEXISTS;
     }
-    else
+    
+
+    if ((status = db.createFile(fileName)) == OK)
+        return status;
+        
+    if ((status = db.openFile(fileName, file)) != OK)
+        return status;
+
+    if ((status = bufMgr->allocPage(file, hdrPageNo, newPage)) != OK)
+        return status;
+
+    hdrPage = (FileHdrPage*) newPage;
+    strcpy(hdrPagePtr->fileName, fileName.c_str());
+    hdrPagePtr->recCnt = 0;
+    hdrPagePtr->pageCnt = 1; 
+        
+    if ((status = bufMgr->allocPage(file, newPageNo, newPage)) != OK)
     {
-        status = db.createFile(fileName);
-        if (status != OK) return status;
-        status = db.openFile(fileName, file);
-        if (status != OK) return status;
-        
-        status = bufMgr->allocPage(file, hdrPageNo, pagePtr);
-        if (status != OK) return status;
-        FileHdrPage* hdrPagePtr = (FileHdrPage*) pagePtr;
-        
-        strcpy(hdrPagePtr->fileName, fileName.c_str());
-        hdrPagePtr->recCnt = 0;
-        hdrPagePtr->pageCnt = 2; // header + 1 data page
-        
-        status = bufMgr->allocPage(file, newPageNo, newPage);
-        if (status != OK) {
             bufMgr->unPinPage(file, hdrPageNo, true);
             return status;
-        }
-        newPage->init(newPageNo);
-        
-        hdrPagePtr->firstPage = newPageNo;
-        hdrPagePtr->lastPage = newPageNo;
-        
-        status = bufMgr->unPinPage(file, hdrPageNo, true);
-        if (status != OK) return status;
-        status = bufMgr->unPinPage(file, newPageNo, true);
-        if (status != OK) return status;
     }
+
+    newPage->init(newPageNo);
+        
+    hdrPage->firstPage = newPageNo;
+    hdrPage->lastPage = newPageNo;
+    hdrPage->pageCnt = 2;
+        
+    if ((status = bufMgr->unPinPage(file, hdrPageNo, true)) != OK)
+    
+        return status;
+    
+
+    if ((status = bufMgr->unPinPage(file, newPageNo, true)) != OK)
+        return status;
+    
     return OK;
 }
 
@@ -467,66 +473,61 @@ const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
     // ensure current page is the last data page in the file
     if (curPage == NULL || curPageNo != headerPage->lastPage)
     {
-        if (curPage != NULL)
-        {
-            status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
-            if (status != OK) return status;
-            curPage = NULL;
-        }
-
         curPageNo = headerPage->lastPage;
         if ((status = bufMgr->readPage(filePtr, curPageNo, curPage)) != OK)
             return status;
-        // try to insert into current last page
-        status = curPage->insertRecord(rec, rid);
-        if (status == OK)
-        {
-            curDirtyFlag = true;
-            outRid = rid;
-            headerPage->recCnt++;
-            hdrDirtyFlag = true;
-            return OK;
-        }
-        else
-        {
-            // current page is full, allocate a new page
-            if ((status = bufMgr->allocPage(filePtr, newPageNo, newPage)) != OK)
-                return status;
-
-            newPage->init(newPageNo);
-
-            status = curPage->setNextPage(newPageNo);
-            if (status != OK)
-            {
-                bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
-                return status;
-            }
-            curDirtyFlag = true;
-
-            unpinstatus = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
-            if (unpinstatus != OK)
-                return unpinstatus;
-
-            curPage = newPage;
-            curPageNo = newPageNo;
-            curDirtyFlag = false;
-
-            status = curPage->insertRecord(rec, rid);
-            if (status != OK)
-                return status;
-
-            curDirtyFlag = true;
-            outRid = rid;
-            headerPage->lastPage = newPageNo;
-            headerPage->pageCnt++;
-            headerPage->recCnt++;
-            hdrDirtyFlag = true;
-
-            return OK;
-        }
-        
+        curDirtyFlag = false;
     }
+
+    // try to insert into current last page
+    status = curPage->insertRecord(rec, rid);
+
+    if (status == OK)
+    {
+        curDirtyFlag = true;
+        outRid = rid;
+        headerPage->recCnt++;
+        hdrDirtyFlag = true;
+        return OK;
+    }
+        
+    // current page is full, allocate a new page
+    if ((status = bufMgr->allocPage(filePtr, newPageNo, newPage)) != OK)
+        return status;
+
+    newPage->init(newPageNo);
+
+    if ((status = curPage->setNextPage(newPageNo)) != OK)
+    {
+        bufMgr->unPinPage(filePtr, newPageNo, false);
+        return status;
+    }
+    curDirtyFlag = true;
+
+    if ((unpinstatus = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag)) != OK)
+        return unpinstatus;
+            
+    curPage = newPage;
+    curPageNo = newPageNo;
+    curDirtyFlag = false;
+
+    headerPage->lastPage = newPageNo;
+    headerPage->pageCnt++;
+    hdrDirtyFlag = true;
+
+    if ((status = curPage->insertRecord(rec, rid)) != OK)
+        return status;
+
+    curDirtyFlag = true;
+    outRid = rid;
+    headerPage->recCnt++;
+    hdrDirtyFlag = true;
+
+            return OK;
 }
+        
+    
+
 
     
     
