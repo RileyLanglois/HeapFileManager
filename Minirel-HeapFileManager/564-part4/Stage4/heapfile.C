@@ -81,7 +81,7 @@ HeapFile::HeapFile(const string & fileName, Status& returnStatus)
                 headerPage = (FileHdrPage*) pagePtr;
                 hdrDirtyFlag = false;
 
-                currPageNo = headerPage->firstPage;
+                curPageNo = headerPage->firstPage;
                 if ((status = bufMgr->readPage(filePtr, currPageNo, pagePtr)) == OK)
                 {
                     curPage = (DataPage*) pagePtr;
